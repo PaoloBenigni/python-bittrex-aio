@@ -1,20 +1,18 @@
-python-bittrex  
+python-bittrex-aio  
 ==============
 
-[![Build Status](https://travis-ci.org/ericsomdahl/python-bittrex.svg?branch=master)](https://travis-ci.org/ericsomdahl/python-bittrex)
-[![PyPI version](https://badge.fury.io/py/python-bittrex.svg)](https://badge.fury.io/py/python-bittrex)
 
-Python bindings for bittrex.  I am Not associated -- use at your own risk, etc.
+Asynchronous python bindings for bittrex using aiohttp. Modified from bittrex-python by erocsomdahl
 
 
 Installation
 -------------
 
 ### for most recent stable release
-`pip install python-bittrex`
+`pip install python-bittrex-aio`
 
 ### for bleeding edge development 
-`pip install git+https://github.com/ericsomdahl/python-bittrex.git`
+`pip install git+https://github.com/BlockHub/python-bittrex-aio.git`
 
 API Documentation
 -------------
@@ -31,10 +29,14 @@ Example Usage for Bittrex API
 -------------
 
 ```python
-from bittrex.bittrex import Bittrex, API_V2_0
+from aiobittrex.bittrex import Bittrex, API_V2_0
+import asyncio
 
 my_bittrex = Bittrex(None, None, api_version=API_V2_0)  # or defaulting to v1.1 as Bittrex(None, None)
-my_bittrex.get_markets()
+tasks = [my_bittrex.get_markets()]
+
+loop = asyncio.get_event_loop()
+res = loop.run_until_complete(asyncio.gather(*tasks))[0]
 ```
 
 This call to get_markets returns an object such as the following:
@@ -51,11 +53,15 @@ Make sure you save the secret, as it will not be visible
 after navigating away from the page. 
 
 ```python
-from bittrex.bittrex import *
+from aiobittrex.bittrex import *
 
 my_bittrex = Bittrex("<my_api_key>", "<my_api_secret>", api_version="<API_V1_1> or <API_V2_0>")
 
-my_bittrex.get_balance('ETH')
+tasks = [my_bittrex.get_balance('ETH')]
+
+loop = asyncio.get_event_loop()
+res = loop.run_until_complete(asyncio.gather(*tasks))[0]
+
 
 ```
 
