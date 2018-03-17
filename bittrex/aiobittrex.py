@@ -5,6 +5,10 @@
 import time
 import hmac
 import hashlib
+import aiohttp
+import asyncio
+import requests
+import async_timeout
 
 try:
     from urllib import urlencode
@@ -21,8 +25,6 @@ else:
     import json
 
     encrypted = True
-
-import requests
 
 BUY_ORDERBOOK = 'buy'
 SELL_ORDERBOOK = 'sell'
@@ -84,13 +86,18 @@ class Bittrex(object):
     Used for requesting Bittrex with API key and API secret
     """
 
-    def __init__(self, api_key, api_secret, calls_per_second=1, dispatch=using_requests, api_version=API_V1_1):
+    def __init__(self, api_key, api_secret, calls_per_second=1, api_version=API_V1_1):
         self.api_key = str(api_key) if api_key is not None else ''
         self.api_secret = str(api_secret) if api_secret is not None else ''
-        self.dispatch = dispatch
         self.call_rate = 1.0 / calls_per_second
         self.last_call = None
         self.api_version = api_version
+        self.session = aiohttp.ClientSession()
+
+    async def dispatch(self, url, apisign):
+        async with async_timeout.timeout(10):
+            async with self.session.get(url, headers={"apisign": apisign}) as response:
+                return await response.json()
 
     def decrypt(self):
         if encrypted:
@@ -108,19 +115,7 @@ class Bittrex(object):
         else:
             raise ImportError('"pycrypto" module has to be installed')
 
-    def wait(self):
-        if self.last_call is None:
-            self.last_call = time.time()
-        else:
-            now = time.time()
-            passed = now - self.last_call
-            if passed < self.call_rate:
-                # print("sleep")
-                time.sleep(self.call_rate - passed)
-
-            self.last_call = time.time()
-
-    def _api_query(self, protection=None, path_dict=None, options=None):
+    async def _api_query(self, protection=None, path_dict=None, options=None):
         """
         Queries Bittrex
 
@@ -147,22 +142,21 @@ class Bittrex(object):
         request_url += urlencode(options)
 
         try:
-            apisign = hmac.new(self.api_secret.encode(),
-                               request_url.encode(),
-                               hashlib.sha512).hexdigest()
+            apisign = hmac.new(
+                self.api_secret.encode(),
+                request_url.encode(),
+                hashlib.sha512).hexdigest()
 
-            self.wait()
+            return await self.dispatch(request_url, apisign)
 
-            return self.dispatch(request_url, apisign)
-
-        except Exception:
+        except Exception as e:
             return {
                 'success': False,
-                'message': 'NO_API_RESPONSE',
+                'message': str(e),
                 'result': None
             }
 
-    def get_markets(self):
+    async def get_markets(self):
         """
         Used to get the open and available trading markets
         at Bittrex along with other meta data.
@@ -191,11 +185,11 @@ class Bittrex(object):
         :return: Available market info in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/public/getmarkets',
         }, protection=PROTECTION_PUB)
 
-    def get_currencies(self):
+    async def get_currencies(self):
         """
         Used to get all supported currencies at Bittrex
         along with other meta data.
@@ -207,12 +201,12 @@ class Bittrex(object):
         :return: Supported currencies info in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/public/getcurrencies',
             API_V2_0: '/pub/Currencies/GetCurrencies'
         }, protection=PROTECTION_PUB)
 
-    def get_ticker(self, market):
+    async def get_ticker(self, market):
         """
         Used to get the current tick values for a market.
 
@@ -225,11 +219,11 @@ class Bittrex(object):
         :return: Current values for given market in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/public/getticker',
         }, options={'market': market}, protection=PROTECTION_PUB)
 
-    def get_market_summaries(self):
+    async def get_market_summaries(self):
         """
         Used to get the last 24 hour summary of all active exchanges
 
@@ -240,12 +234,12 @@ class Bittrex(object):
         :return: Summaries of active exchanges in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/public/getmarketsummaries',
             API_V2_0: '/pub/Markets/GetMarketSummaries'
         }, protection=PROTECTION_PUB)
 
-    def get_market_summary(self, market):
+    async def get_market_summary(self, market):
         """
         Used to get the last 24 hour summary of all active
         exchanges in specific coin
@@ -259,12 +253,12 @@ class Bittrex(object):
         :return: Summaries of active exchanges of a coin in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/public/getmarketsummary',
             API_V2_0: '/pub/Market/GetMarketSummary'
         }, options={'market': market, 'marketname': market}, protection=PROTECTION_PUB)
 
-    def get_orderbook(self, market, depth_type=BOTH_ORDERBOOK):
+    async def get_orderbook(self, market, depth_type=BOTH_ORDERBOOK):
         """
         Used to get retrieve the orderbook for a given market.
 
@@ -283,12 +277,12 @@ class Bittrex(object):
         :return: Orderbook of market in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/public/getorderbook',
             API_V2_0: '/pub/Market/GetMarketOrderBook'
         }, options={'market': market, 'marketname': market, 'type': depth_type}, protection=PROTECTION_PUB)
 
-    def get_market_history(self, market):
+    async def get_market_history(self, market):
         """
         Used to retrieve the latest trades that have occurred for a
         specific market.
@@ -316,11 +310,11 @@ class Bittrex(object):
         :return: Market history in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/public/getmarkethistory',
         }, options={'market': market, 'marketname': market}, protection=PROTECTION_PUB)
 
-    def buy_limit(self, market, quantity, rate):
+    async def buy_limit(self, market, quantity, rate):
         """
         Used to place a buy order in a specific market. Use buylimit to place
         limit orders Make sure you have the proper permissions set on your
@@ -340,13 +334,13 @@ class Bittrex(object):
         :return:
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/market/buylimit',
         }, options={'market': market,
                     'quantity': quantity,
                     'rate': rate}, protection=PROTECTION_PRV)
 
-    def sell_limit(self, market, quantity, rate):
+    async def sell_limit(self, market, quantity, rate):
         """
         Used to place a sell order in a specific market. Use selllimit to place
         limit orders Make sure you have the proper permissions set on your
@@ -366,13 +360,13 @@ class Bittrex(object):
         :return:
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/market/selllimit',
         }, options={'market': market,
                     'quantity': quantity,
                     'rate': rate}, protection=PROTECTION_PRV)
 
-    def cancel(self, uuid):
+    async def cancel(self, uuid):
         """
         Used to cancel a buy or sell order
 
@@ -385,12 +379,12 @@ class Bittrex(object):
         :return:
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/market/cancel',
             API_V2_0: '/key/market/tradecancel'
         }, options={'uuid': uuid, 'orderid': uuid}, protection=PROTECTION_PRV)
 
-    def get_open_orders(self, market=None):
+    async def get_open_orders(self, market=None):
         """
         Get all orders that you currently have opened.
         A specific market can be requested.
@@ -404,12 +398,12 @@ class Bittrex(object):
         :return: Open orders info in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/market/getopenorders',
             API_V2_0: '/key/market/getopenorders'
         }, options={'market': market, 'marketname': market} if market else None, protection=PROTECTION_PRV)
 
-    def get_balances(self):
+    async def get_balances(self):
         """
         Used to retrieve all balances from your account.
 
@@ -433,12 +427,12 @@ class Bittrex(object):
         :return: Balances info in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/account/getbalances',
             API_V2_0: '/key/balance/GetBalances'
         }, protection=PROTECTION_PRV)
 
-    def get_balance(self, currency):
+    async def get_balance(self, currency):
         """
         Used to retrieve the balance from your account for a specific currency
 
@@ -462,12 +456,12 @@ class Bittrex(object):
         :return: Balance info in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/account/getbalance',
             API_V2_0: '/key/balance/getbalance'
         }, options={'currency': currency, 'currencyname': currency}, protection=PROTECTION_PRV)
 
-    def get_deposit_address(self, currency):
+    async def get_deposit_address(self, currency):
         """
         Used to generate or retrieve an address for a specific currency
 
@@ -480,12 +474,12 @@ class Bittrex(object):
         :return: Address info in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/account/getdepositaddress',
             API_V2_0: '/key/balance/getdepositaddress'
         }, options={'currency': currency, 'currencyname': currency}, protection=PROTECTION_PRV)
 
-    def withdraw(self, currency, quantity, address, paymentid=None):
+    async def withdraw(self, currency, quantity, address, paymentid=None):
         """
         Used to withdraw funds from your account
 
@@ -511,12 +505,12 @@ class Bittrex(object):
         }
         if paymentid:
             options['paymentid'] = paymentid
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/account/withdraw',
             API_V2_0: '/key/balance/withdrawcurrency'
         }, options=options, protection=PROTECTION_PRV)
 
-    def get_order_history(self, market=None):
+    async def get_order_history(self, market=None):
         """
         Used to retrieve order trade history of account
 
@@ -531,17 +525,17 @@ class Bittrex(object):
         :rtype : dict
         """
         if market:
-            return self._api_query(path_dict={
+            return await self._api_query(path_dict={
                 API_V1_1: '/account/getorderhistory',
                 API_V2_0: '/key/market/GetOrderHistory'
             }, options={'market': market, 'marketname': market}, protection=PROTECTION_PRV)
         else:
-            return self._api_query(path_dict={
+            return await self._api_query(path_dict={
                 API_V1_1: '/account/getorderhistory',
                 API_V2_0: '/key/orders/getorderhistory'
             }, protection=PROTECTION_PRV)
 
-    def get_order(self, uuid):
+    async def get_order(self, uuid):
         """
         Used to get details of buy or sell order
 
@@ -554,12 +548,12 @@ class Bittrex(object):
         :return:
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/account/getorder',
             API_V2_0: '/key/orders/getorder'
         }, options={'uuid': uuid, 'orderid': uuid}, protection=PROTECTION_PRV)
 
-    def get_withdrawal_history(self, currency=None):
+    async def get_withdrawal_history(self, currency=None):
         """
         Used to view your history of withdrawals
 
@@ -573,13 +567,13 @@ class Bittrex(object):
         :rtype : dict
         """
 
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/account/getwithdrawalhistory',
             API_V2_0: '/key/balance/getwithdrawalhistory'
         }, options={'currency': currency, 'currencyname': currency} if currency else None,
             protection=PROTECTION_PRV)
 
-    def get_deposit_history(self, currency=None):
+    async def get_deposit_history(self, currency=None):
         """
         Used to view your history of deposits
 
@@ -592,7 +586,7 @@ class Bittrex(object):
         :return: deposit history in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V1_1: '/account/getdeposithistory',
             API_V2_0: '/key/balance/getdeposithistory'
         }, options={'currency': currency, 'currencyname': currency} if currency else None,
@@ -616,7 +610,7 @@ class Bittrex(object):
         return [market['MarketName'] for market in self.get_markets()['result']
                 if market['MarketName'].lower().endswith(currency.lower())]
 
-    def get_wallet_health(self):
+    async def get_wallet_health(self):
         """
         Used to view wallet health
 
@@ -626,11 +620,11 @@ class Bittrex(object):
 
         :return:
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V2_0: '/pub/Currencies/GetWalletHealth'
         }, protection=PROTECTION_PUB)
 
-    def get_balance_distribution(self):
+    async def get_balance_distribution(self):
         """
         Used to view balance distibution
 
@@ -640,11 +634,11 @@ class Bittrex(object):
 
         :return:
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V2_0: '/pub/Currency/GetBalanceDistribution'
         }, protection=PROTECTION_PUB)
 
-    def get_pending_withdrawals(self, currency=None):
+    async def get_pending_withdrawals(self, currency=None):
         """
         Used to view your pending withdrawals
 
@@ -657,12 +651,12 @@ class Bittrex(object):
         :return: pending withdrawals in JSON
         :rtype : list
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V2_0: '/key/balance/getpendingwithdrawals'
         }, options={'currencyname': currency} if currency else None,
             protection=PROTECTION_PRV)
 
-    def get_pending_deposits(self, currency=None):
+    async def get_pending_deposits(self, currency=None):
         """
         Used to view your pending deposits
 
@@ -675,12 +669,12 @@ class Bittrex(object):
         :return: pending deposits in JSON
         :rtype : list
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V2_0: '/key/balance/getpendingdeposits'
         }, options={'currencyname': currency} if currency else None,
             protection=PROTECTION_PRV)
 
-    def generate_deposit_address(self, currency):
+    async def generate_deposit_address(self, currency):
         """
         Generate a deposit address for the specified currency
 
@@ -693,11 +687,11 @@ class Bittrex(object):
         :return: result of creation operation
         :rtype : dict
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V2_0: '/key/balance/getpendingdeposits'
         }, options={'currencyname': currency}, protection=PROTECTION_PRV)
 
-    def trade_sell(self, market=None, order_type=None, quantity=None, rate=None, time_in_effect=None,
+    async def trade_sell(self, market=None, order_type=None, quantity=None, rate=None, time_in_effect=None,
                    condition_type=None, target=0.0):
         """
         Enter a sell order into the book
@@ -725,7 +719,7 @@ class Bittrex(object):
         :type target: float
         :return:
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V2_0: '/key/market/tradesell'
         }, options={
             'marketname': market,
@@ -737,7 +731,7 @@ class Bittrex(object):
             'target': target
         }, protection=PROTECTION_PRV)
 
-    def trade_buy(self, market=None, order_type=None, quantity=None, rate=None, time_in_effect=None,
+    async def trade_buy(self, market=None, order_type=None, quantity=None, rate=None, time_in_effect=None,
                   condition_type=None, target=0.0):
         """
         Enter a buy order into the book
@@ -765,7 +759,7 @@ class Bittrex(object):
         :type target: float
         :return:
         """
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V2_0: '/key/market/tradebuy'
         }, options={
             'marketname': market,
@@ -777,7 +771,7 @@ class Bittrex(object):
             'target': target
         }, protection=PROTECTION_PRV)
 
-    def get_candles(self, market, tick_interval):
+    async def get_candles(self, market, tick_interval):
         """
         Used to get all tick candles for a market.
 
@@ -809,13 +803,13 @@ class Bittrex(object):
         :rtype: dict
         """
 
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V2_0: '/pub/market/GetTicks'
         }, options={
             'marketName': market, 'tickInterval': tick_interval
         }, protection=PROTECTION_PUB)
 
-    def get_latest_candle(self, market, tick_interval):
+    async def get_latest_candle(self, market, tick_interval):
         """
         Used to get the latest candle for the market.
 
@@ -840,7 +834,7 @@ class Bittrex(object):
         :rtype: dict
         """
 
-        return self._api_query(path_dict={
+        return await self._api_query(path_dict={
             API_V2_0: '/pub/market/GetLatestTick'
         }, options={
             'marketName': market, 'tickInterval': tick_interval
