@@ -11,7 +11,7 @@ Installation
 ### for most recent stable release
 `pip install python-bittrex-aio`
 
-### for bleeding edge development 
+### for bleeding edge development
 `pip install git+https://github.com/BlockHub/python-bittrex-aio.git`
 
 API Documentation
@@ -29,10 +29,10 @@ Example Usage for Bittrex API
 -------------
 
 ```python
-from aiobittrex.bittrex import Bittrex, API_V2_0
+from aiobittrex.bittrex import Bittrex, API_V1_1
 import asyncio
 
-my_bittrex = Bittrex(None, None, api_version=API_V2_0)  # or defaulting to v1.1 as Bittrex(None, None)
+my_bittrex = Bittrex(None, None, api_version=API_V1_1)  # or defaulting to v1.1 as Bittrex(None, None)
 tasks = [my_bittrex.get_markets()]
 
 loop = asyncio.get_event_loop()
@@ -47,10 +47,10 @@ This call to get_markets returns an object such as the following:
 
 API_V2_0 and API_V1_1 are constants that can be imported from Bittrex.
 
-To access account methods, an API key for your account is required and can be 
-generated on the `Settings` then `API Keys` page. 
-Make sure you save the secret, as it will not be visible 
-after navigating away from the page. 
+To access account methods, an API key for your account is required and can be
+generated on the `Settings` then `API Keys` page.
+Make sure you save the secret, as it will not be visible
+after navigating away from the page.
 
 ```python
 from aiobittrex.bittrex import *
@@ -68,9 +68,9 @@ res = loop.run_until_complete(asyncio.gather(*tasks))[0]
 This call to get_balance returns an object such as the following:
 
 ```python
-{'success': True, 
+{'success': True,
  'message': '',
- 'result': {'Currency': 'ETH', 'Balance': 0.0, 'Available': 0.0, 
+ 'result': {'Currency': 'ETH', 'Balance': 0.0, 'Available': 0.0,
             'Pending': 0.0, 'CryptoAddress': None}
 }
 ```

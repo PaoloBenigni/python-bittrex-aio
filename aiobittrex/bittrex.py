@@ -92,11 +92,11 @@ class Bittrex(object):
         self.call_rate = 1.0 / calls_per_second
         self.last_call = None
         self.api_version = api_version
-        self.session = aiohttp.ClientSession()
+        self._session = aiohttp.ClientSession()
 
-    async def dispatch(self, url, apisign):
-        async with async_timeout.timeout(10):
-            async with self.session.get(url, headers={"apisign": apisign}) as response:
+    async def _dispatch(self, url, apisign):
+        with async_timeout.timeout(10):
+            async with self._session.get(url, headers={"apisign": apisign}) as response:
                 return await response.json()
 
     def decrypt(self):
@@ -147,7 +147,7 @@ class Bittrex(object):
                 request_url.encode(),
                 hashlib.sha512).hexdigest()
 
-            return await self.dispatch(request_url, apisign)
+            return await self._dispatch(request_url, apisign)
 
         except Exception as e:
             return {
